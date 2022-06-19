@@ -1,4 +1,4 @@
-/* MisbitFont Library V0.1
+/* MisbitFont Library V0.2
  * By Joshua Moss
  *
  * This library is designed to take advantage of the MisbitFont bitmap format,
@@ -210,7 +210,7 @@ extern MSBTFONT_SPEC msbtfont_retcode msbtfont_store_font_character_data(const m
  *
  *  Description:  Retrieves the dimensions of a possible surface based on the font data and
  *  the number of characters per row.  Useful for surface creation and copying data back to
- *  the surface.
+ *  the surface. 
  *
  *  Parameters:
  *  	header = Pointer to an existing MisbitFont header structure (created either statically or dynamically).  Must not be NULL in order to properly retrieve the dimensions of a possible surface.
@@ -227,6 +227,22 @@ extern MSBTFONT_SPEC msbtfont_retcode msbtfont_store_font_character_data(const m
 extern MSBTFONT_SPEC msbtfont_retcode msbtfont_get_surface_size(const msbtfont_header *header, msbtfont_rect *surface_size, unsigned int characters_per_row);
 
 /**
+ *  Function:  msbtfont_get_surface_memory_requirement
+ *
+ *  Description:  Retrieves the amount of memory required to setup that surface in system
+ *  memory based on surface size and surface format.  This function takes memory alignment into
+ *  account based on the surface format.  Useful for allocating memory in regards to surface
+ *  data and later using it.
+ *
+ *  Parameters:
+ *  	surface_descriptor = Pointer to an existing surface descriptor (created either statically or dynamically).  Must not be NULL in order to properly retrieve memory size data.
+ *
+ *  Returns:
+ *  	Surface memory required to allocate.  Otherwise, it's 0 if an invalid or no surface descriptor was provided.
+ **/
+extern MSBTFONT_SPEC size_t msbtfont_get_surface_memory_requirement(const msbtfont_surface_descriptor *surface_descriptor);
+
+/**
  *  Function:  msbtfont_copy_to_surface
  *
  *  Description:  Copies all the font character data and store them in a surface-friendly
@@ -238,6 +254,8 @@ extern MSBTFONT_SPEC msbtfont_retcode msbtfont_get_surface_size(const msbtfont_h
  *  Parameters:
  *  	header = Pointer to an existing MisbitFont header structure (created either statically or dynamically).  Must not be NULL.
  *  	filedata = Pointer to an existing MisbitFont file data structure (created either statically or dynamically).  Must not be NULL in order to retrieve (and convert if necessary).
+ *  	characters_per_row = Number of characters per row in the surface.  If 0 is specified, it will fill based on the available width of the surface.
+ *  	character_start_offset = If 'characters_per_row' is non-zero, this shifts the starting position by a number of characters.  Otherwise, it does nothing.  Useful for copying multiple fonts together into one surface.
  *  	surface_descriptor = Pointer to an existing surface descriptor (created either statically or dynamically).  Must not be NULL in order to ensure proper copying (and conversion if necessary).
  *  	surface_data = Pointer to an existing surface (created either statically or dynamically).  Must not be NULL in order to store data onto the surface.  Must also make sure there is enough memory before storage.
  *  
@@ -252,7 +270,8 @@ extern MSBTFONT_SPEC msbtfont_retcode msbtfont_get_surface_size(const msbtfont_h
  *  	MSBTFONT_FILEDATA_NOT_INITIALIZED = MisbitFont file data structre was not initialized.
  *  	MSBTFONT_UNSUPPORTED_SURFACE_FORMAT = Surface format supplied by the descriptor is currently unsupported or invalid.
  **/
-extern MSBTFONT_SPEC msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const msbtfont_filedata *filedata, const msbtfont_surface_descriptor *surface_descriptor, unsigned char *surface_data);
+extern MSBTFONT_SPEC msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const msbtfont_filedata *filedata, unsigned int characters_per_row, unsigned int character_start_offset, const msbtfont_surface_descriptor *surface_descriptor, unsigned char *surface_data);
+
 #ifdef __cplusplus
 }
 #endif

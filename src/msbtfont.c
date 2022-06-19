@@ -348,7 +348,48 @@ msbtfont_retcode msbtfont_get_surface_size(const msbtfont_header *header, msbtfo
 	}
 }
 
-msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const msbtfont_filedata *filedata, const msbtfont_surface_descriptor *surface_descriptor, unsigned char *surface_data)
+size_t msbtfont_get_surface_memory_requirement(const msbtfont_surface_descriptor *surface_descriptor)
+{
+	if (surface_descriptor != NULL)
+	{
+		if (surface_descriptor->rect.width == 0 || surface_descriptor->rect.height == 0)
+		{
+			return 0;
+		}
+		switch (surface_descriptor->format)
+		{
+			case MSBTFONT_SURFACE_FORMAT_8:
+			{
+				size_t stride_check = surface_descriptor->rect.width % 4;
+				return (surface_descriptor->rect.width + (stride_check ? 4 - stride_check : 0)) * surface_descriptor->rect.height;
+			}
+			case MSBTFONT_SURFACE_FORMAT_16_8:
+			{
+				size_t stride_check = (surface_descriptor->rect.width * 2) % 4;
+				return (surface_descriptor->rect.width + (stride_check ? 4 - stride_check : 0)) * surface_descriptor->rect.height * 2;
+			}
+			case MSBTFONT_SURFACE_FORMAT_24_8:
+			{
+				size_t stride_check = (surface_descriptor->rect.width * 3) % 4;
+				return (surface_descriptor->rect.width + (stride_check ? 4 - stride_check : 0)) * surface_descriptor->rect.height * 3;
+			}
+			case MSBTFONT_SURFACE_FORMAT_32_8:
+			{
+				return surface_descriptor->rect.width * surface_descriptor->rect.height * 4;
+			}
+			default:
+			{
+				return 0;
+			}
+		}
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const msbtfont_filedata *filedata, unsigned int characters_per_row, unsigned int character_start_offset, const msbtfont_surface_descriptor *surface_descriptor, unsigned char *surface_data)
 {
 	if (header != NULL)
 	{
@@ -361,8 +402,8 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 					unsigned int font_character_count = 0;
 					unsigned short max_font_width = header->max_font_width + 1;
 					unsigned short max_font_height = header->max_font_height + 1;
-					size_t font_offset_x = 0;
-					size_t font_offset_y = 0;
+					size_t font_offset_x = surface_descriptor->rect.x;
+					size_t font_offset_y = surface_descriptor->rect.y;
 					if (header->magicword_le == MSBTFONT_MSBT)
 					{
 						font_character_count = header->font_character_count_le;
@@ -383,10 +424,26 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 					{
 						return MSBTFONT_FILEDATA_NOT_INITIALIZED;
 					}
+					if (character_start_offset != 0)
+					{
+						font_offset_x += (character_start_offset * max_font_width);
+						if (font_offset_x >= surface_descriptor->rect.width)
+						{
+							size_t new_font_offset_x = font_offset_x % surface_descriptor->rect.width;
+							size_t row_count = font_offset_x / surface_descriptor->rect.width;
+							font_offset_x = new_font_offset_x;
+							font_offset_y += row_count * max_font_height;
+							if (font_offset_y >= surface_descriptor->rect.height)
+							{
+								return MSBTFONT_SUCCESS;
+							}
+						}
+					}
 					switch (surface_descriptor->format)
 					{
 						case MSBTFONT_SURFACE_FORMAT_8:
 						{
+							size_t stride_check = surface_descriptor->rect.width % 4;
 							switch (surface_descriptor->origin)
 							{
 								case MSBTFONT_SURFACE_ORIGIN_UPPERLEFT:
@@ -396,6 +453,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -426,13 +496,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														continue;
 													}
-													surface_data[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x] = pixel;
+													surface_data[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x + ((stride_check ? (4 - stride_check) : 0) * (y + font_offset_y))] = pixel;
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -445,6 +515,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
 												if (font_offset_y + y >= surface_descriptor->rect.height)
@@ -457,13 +540,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														break;
 													}
-													surface_data[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x] = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
+													surface_data[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x + ((stride_check ? (4 - stride_check) : 0) * (y + font_offset_y))] = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -481,6 +564,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -511,13 +607,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														continue;
 													}
-													surface_data[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x] = pixel;
+													surface_data[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x + ((stride_check ? (4 - stride_check) : 0) * (surface_descriptor->rect.height - 1 - font_offset_y - y))] = pixel;
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -532,6 +628,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										{
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
+												if (characters_per_row != 0)
+												{
+													size_t index_mod = character_start_offset + i;
+													if (index_mod != 0 && (index_mod % characters_per_row == 0))
+													{
+														font_offset_x = surface_descriptor->rect.x;
+														font_offset_y += max_font_height;
+														if (font_offset_y >= surface_descriptor->rect.height)
+														{
+															break;
+														}
+													}
+												}
 												if (font_offset_y + y >= surface_descriptor->rect.height)
 												{
 													break;
@@ -542,13 +651,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														break;
 													}
-													surface_data[((max_font_height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x] = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
+													surface_data[((max_font_height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x + ((stride_check ? (4 - stride_check) : 0) * (surface_descriptor->rect.height - 1 - font_offset_y - y))] = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -570,6 +679,7 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 								unsigned char g;
 							} rg8;
 							rg8 *surface_data_rg8 = (rg8 *)(surface_data);
+							size_t stride_check = surface_descriptor->rect.width % 2;
 							switch (surface_descriptor->origin)
 							{
 								case MSBTFONT_SURFACE_ORIGIN_UPPERLEFT:
@@ -579,6 +689,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -609,13 +732,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														continue;
 													}
-													surface_data_rg8[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x].r = pixel;
+													surface_data_rg8[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x + (stride_check * (font_offset_y + y))].r = pixel;
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -628,6 +751,15 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
 												if (font_offset_y + y >= surface_descriptor->rect.height)
@@ -640,13 +772,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														break;
 													}
-													surface_data_rg8[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x].r = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
+													surface_data_rg8[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x].r = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x + (stride_check * (font_offset_y + y))];
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -664,6 +796,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -694,13 +839,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														continue;
 													}
-													surface_data_rg8[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x].r = pixel;
+													surface_data_rg8[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x + (stride_check * (surface_descriptor->rect.height - 1 - font_offset_y - y))].r = pixel;
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -713,6 +858,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
 												if (font_offset_y + y >= surface_descriptor->rect.height)
@@ -725,13 +883,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														break;
 													}
-													surface_data_rg8[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x].r = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
+													surface_data_rg8[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x].r = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x + (stride_check * (surface_descriptor->rect.height - 1 - font_offset_y - y))];
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -747,13 +905,7 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 						}
 						case MSBTFONT_SURFACE_FORMAT_24_8:
 						{
-							typedef struct rgb8
-							{
-								unsigned char r;
-								unsigned char g;
-								unsigned char b;
-							} rgb8;
-							rgb8 *surface_data_rgb8 = (rgb8 *)(surface_data);
+							size_t stride_check = (surface_descriptor->rect.width * 3) % 4;
 							switch (surface_descriptor->origin)
 							{
 								case MSBTFONT_SURFACE_ORIGIN_UPPERLEFT:
@@ -763,6 +915,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -793,13 +958,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														continue;
 													}
-													surface_data_rgb8[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x].r = pixel;
+													surface_data[(((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x) * 3 + ((stride_check ? 4 - stride_check : 0) * (y + font_offset_y))] = pixel;
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -812,6 +977,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
 												if (font_offset_y + y >= surface_descriptor->rect.height)
@@ -824,13 +1002,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														break;
 													}
-													surface_data_rgb8[((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x].r = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
+													surface_data[(((y + font_offset_y) * surface_descriptor->rect.width) + font_offset_x + x) * 3 + ((stride_check ? (4 - stride_check) : 0) * (y + font_offset_y))] = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -848,6 +1026,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -878,13 +1069,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														continue;
 													}
-													surface_data_rgb8[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x].r = pixel;
+													surface_data[(((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x) * 3 + ((stride_check ? (4 - stride_check) : 0) * (surface_descriptor->rect.height - 1 - font_offset_y - y))] = pixel;
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -897,6 +1088,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
 												if (font_offset_y + y >= surface_descriptor->rect.height)
@@ -909,13 +1113,13 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 													{
 														break;
 													}
-													surface_data_rgb8[((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x].r = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
+													surface_data[(((surface_descriptor->rect.height - 1 - font_offset_y - y) * surface_descriptor->rect.width) + font_offset_x + x) * 3 + ((stride_check ? 4 - stride_check : 0) * (surface_descriptor->rect.height - 1 - font_offset_y - y))] = filedata->font_data[(i * max_font_width * max_font_height) + (y * max_font_width) + x];
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -948,6 +1152,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / 8)];
@@ -982,9 +1199,9 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -997,6 +1214,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
 												if (font_offset_y + y >= surface_descriptor->rect.height)
@@ -1013,9 +1243,9 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -1033,6 +1263,19 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 										unsigned char bitmask = (0xFF << (7 - header->palette_format));
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											size_t c_offset = 0;
 											unsigned char bit_offset = ((i * (header->palette_format + 1) * max_font_width * max_font_height) % (8 - header->palette_format));
 											unsigned char *base_chardata = &filedata->font_data[((i * (header->palette_format + 1) * max_font_width * max_font_height) / (8 - header->palette_format))];
@@ -1067,9 +1310,9 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)
@@ -1082,9 +1325,22 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 									{
 										for (unsigned int i = 0; i < font_character_count; ++i)
 										{
+											if (characters_per_row != 0)
+											{
+												size_t index_mod = character_start_offset + i;
+												if (index_mod != 0 && (index_mod % characters_per_row == 0))
+												{
+													font_offset_x = surface_descriptor->rect.x;
+													font_offset_y += max_font_height;
+													if (font_offset_y >= surface_descriptor->rect.height)
+													{
+														break;
+													}
+												}
+											}
 											for (unsigned short y = 0; y < max_font_height; ++y)
 											{
-												if (font_offset_y + y >= surface_descriptor->rect.width)
+												if (font_offset_y + y >= surface_descriptor->rect.height)
 												{
 													break;
 												}
@@ -1098,9 +1354,9 @@ msbtfont_retcode msbtfont_copy_to_surface(const msbtfont_header *header, const m
 												}
 											}
 											font_offset_x += max_font_width;
-											if (font_offset_x >= surface_descriptor->rect.width)
+											if (characters_per_row == 0 && font_offset_x >= surface_descriptor->rect.width)
 											{
-												font_offset_x = 0;
+												font_offset_x = surface_descriptor->rect.x;
 												font_offset_y += max_font_height;
 											}
 											if (font_offset_y >= surface_descriptor->rect.height)

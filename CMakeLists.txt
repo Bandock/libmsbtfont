@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(libmsbtfont VERSION 0.1 LANGUAGES C CXX)
+project(libmsbtfont VERSION 0.2 LANGUAGES C CXX)
 
 set(LIBRARY_TYPE "STATIC" CACHE STRING "Library type")
 set_property(CACHE LIBRARY_TYPE PROPERTY STRINGS "STATIC;SHARED")
@@ -11,7 +11,7 @@ endif ()
 include(GNUInstallDirs)
 
 add_library(msbtfont ${LIBRARY_TYPE} src/msbtfont.c)
-set_target_properties(msbtfont PROPERTIES VERSION 0.1 SOVERSION 0.1)
+set_target_properties(msbtfont PROPERTIES VERSION 0.2 SOVERSION 0.2)
 if (LIBRARY_TYPE STREQUAL "SHARED")
 	target_compile_definitions(msbtfont PUBLIC MSBTFONT_SHARED)
 	if (WIN32)
