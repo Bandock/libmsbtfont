@@ -303,6 +303,162 @@ msbtfont_retcode msbtfont_store_font_character_data(const msbtfont_header *heade
 	}
 }
 
+msbtfont_retcode msbtfont_load_font_character_data(const msbtfont_header *header, const msbtfont_filedata *filedata, unsigned char *dstdata, unsigned int index)
+{
+	if (header != NULL)
+	{
+		if (filedata != NULL)
+		{
+			if (dstdata != NULL)
+			{
+				if (filedata->data != NULL)
+				{
+					if (header->magicword_le == MSBTFONT_MSBT)
+					{
+						if (index < header->font_character_count_le)
+						{
+							unsigned short max_font_width = header->max_font_width + 1;
+							unsigned short max_font_height = header->max_font_height + 1;
+							size_t c_soffset = ((index * (header->palette_format + 1) * max_font_width * max_font_height) / 8);
+							size_t c_doffset = 0;
+							unsigned char sbit_offset = ((index * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
+							unsigned char dbit_offset = 0;
+							const unsigned char *base_chardata = &filedata->font_data[c_soffset];
+							if (header->palette_format < 7)
+							{
+								c_soffset = 0;
+								unsigned char bitmask = (0xFF << (7 - header->palette_format));
+								for (unsigned int i = 0; i < max_font_width * max_font_height; ++i)
+								{
+									unsigned char sbit_offset_s = sbit_offset;
+									size_t s_bits_left = (header->palette_format + 1);
+									unsigned char src = ((base_chardata[c_soffset] & (bitmask >> sbit_offset)) << sbit_offset);
+									sbit_offset += s_bits_left;
+									if (sbit_offset > 7)
+									{
+										s_bits_left -= (8 - sbit_offset_s);
+										sbit_offset -= 8;
+										++c_soffset;
+										if (s_bits_left > 8)
+										{
+											src |= ((base_chardata[c_soffset] >> (8 - s_bits_left)) << (7 - header->palette_format));
+										}
+									}
+									dstdata[c_doffset] &= ~(bitmask >> dbit_offset);
+									dstdata[c_doffset] |= (src >> dbit_offset);
+									unsigned char dbit_offset_s = dbit_offset;
+									size_t d_bits_left = (header->palette_format + 1);
+									dbit_offset += d_bits_left;
+									if (dbit_offset > 7)
+									{
+										d_bits_left -= (8 - dbit_offset_s);
+										dbit_offset -= 8;
+										++c_doffset;
+										if (d_bits_left > 8)
+										{
+											dstdata[c_doffset] &= ~(bitmask << ((header->palette_format + 1) - d_bits_left));
+											dstdata[c_doffset] |= (src << ((header->palette_format + 1) - d_bits_left));
+										}
+									}
+								}
+							}
+							else
+							{
+								memcpy(dstdata, base_chardata, max_font_width * max_font_height);
+							}
+							return MSBTFONT_SUCCESS;
+						}
+						else
+						{
+							return MSBTFONT_INDEX_OUT_OF_BOUNDS;
+						}
+					}
+					else if (header->magicword_be == MSBTFONT_TBSM)
+					{
+						if (index < header->font_character_count_be)
+						{
+							unsigned short max_font_width = header->max_font_width + 1;
+							unsigned short max_font_height = header->max_font_height + 1;
+							size_t c_soffset = ((index * (header->palette_format + 1) * max_font_width * max_font_height) / 8);
+							size_t c_doffset = 0;
+							unsigned char sbit_offset = ((index * (header->palette_format + 1) * max_font_width * max_font_height) % 8);
+							unsigned char dbit_offset = 0;
+							const unsigned char *base_chardata = &filedata->font_data[c_soffset];
+							if (header->palette_format < 7)
+							{
+								c_soffset = 0;
+								unsigned char bitmask = (0xFF << (7 - header->palette_format));
+								for (unsigned int i = 0; i < max_font_width * max_font_height; ++i)
+								{
+									unsigned char sbit_offset_s = sbit_offset;
+									size_t s_bits_left = (header->palette_format + 1);
+									unsigned char src = ((base_chardata[c_soffset] & (bitmask >> sbit_offset)) << sbit_offset);
+									sbit_offset += s_bits_left;
+									if (sbit_offset > 7)
+									{
+										s_bits_left -= (8 - sbit_offset_s);
+										sbit_offset -= 8;
+										++c_soffset;
+										if (s_bits_left > 8)
+										{
+											src |= ((base_chardata[c_soffset] >> (8 - s_bits_left)) << (7 - header->palette_format));
+										}
+									}
+									dstdata[c_doffset] &= ~(bitmask >> dbit_offset);
+									dstdata[c_doffset] |= (src >> dbit_offset);
+									unsigned char dbit_offset_s = dbit_offset;
+									size_t d_bits_left = (header->palette_format + 1);
+									dbit_offset += d_bits_left;
+									if (dbit_offset > 7)
+									{
+										d_bits_left -= (8 - dbit_offset_s);
+										dbit_offset -= 8;
+										++c_doffset;
+										if (d_bits_left > 8)
+										{
+											dstdata[c_doffset] &= ~(bitmask << ((header->palette_format + 1) - d_bits_left));
+											dstdata[c_doffset] |= (src << ((header->palette_format + 1) - d_bits_left));
+										}
+									}
+								}
+							}
+							else
+							{
+								memcpy(dstdata, base_chardata, max_font_width * max_font_height);
+							}
+							return MSBTFONT_SUCCESS;
+						}
+						else
+						{
+							return MSBTFONT_INDEX_OUT_OF_BOUNDS;
+						}
+					}
+					else
+					{
+						return MSBTFONT_INVALID_HEADER;
+					}
+				}
+				else
+				{
+					return MSBTFONT_FILEDATA_NOT_INITIALIZED;
+				}
+			}
+			else
+			{
+				return MSBTFONT_MISSING_DESTINATION_DATA;
+			}
+		}
+		else
+		{
+			return MSBTFONT_MISSING_FILEDATA;
+		}
+	}
+	else
+	{
+		return MSBTFONT_MISSING_HEADER;
+	}
+}
+
 msbtfont_retcode msbtfont_get_surface_size(const msbtfont_header *header, msbtfont_rect *surface_size, unsigned int characters_per_row)
 {
 	if (header != NULL)

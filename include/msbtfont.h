@@ -1,4 +1,4 @@
-/* MisbitFont Library V0.2
+/* MisbitFont Library V0.2.1
  * By Joshua Moss
  *
  * This library is designed to take advantage of the MisbitFont bitmap format,
@@ -103,7 +103,8 @@ typedef enum
 	MSBTFONT_NO_CHARACTERS = -12,
 	MSBTFONT_MISSING_SURFACE_DATA = -13,
 	MSBTFONT_NO_SURFACE_AREA = -14,
-	MSBTFONT_UNSUPPORTED_SURFACE_FORMAT = -15
+	MSBTFONT_UNSUPPORTED_SURFACE_FORMAT = -15,
+	MSBTFONT_MISSING_DESTINATION_DATA = -16
 } msbtfont_retcode;
 
 typedef struct msbtfont_header_descriptor
@@ -200,10 +201,33 @@ extern MSBTFONT_SPEC msbtfont_retcode msbtfont_delete_filedata(msbtfont_filedata
  *  	MSBTFONT_MISSING_FILEDATA = Pointer to a MisbitFont file data structure was not provided.
  *  	MSBTFONT_MISSING_SOURCE_DATA = Pointer to source data was not provided.
  *  	MSBTFONT_INVALID_HEADER = Invalid header was provided, more than likely failed a magic word check.
- *  	MSBTFONT_FILEDATA_NOT_INITIALIZED = MisbitFont file data structre was not initialized.
+ *  	MSBTFONT_FILEDATA_NOT_INITIALIZED = MisbitFont file data structure was not initialized.
  *  	MSBTFONT_INDEX_OUT_OF_BOUNDS = Index provided was outside the range (greater than or equal to the font character count).
  **/
 extern MSBTFONT_SPEC msbtfont_retcode msbtfont_store_font_character_data(const msbtfont_header *header, msbtfont_filedata *filedata, const unsigned char *srcdata, unsigned int index);
+
+/**
+ *  Function:  msbtfont_load_font_character_data
+ *
+ *  Description:  Loads font character data for a single character from file data to
+ *  application memory; guided by the header in order to ensure proper storage.
+ *
+ *  Parameters:
+ *  	header = Pointer to an existing MisbitFont header structure (created either statically or dynamically).  Must not be NULL in order to ensure proper storage.
+ *  	filedata = Pointer to an existing MisbitFont file data structure (created either statically or dynamically).  Must not be NULL in order to load data from it.
+ *	dstdata = Pointer to destination data usually in application memory (either statically or dynamically allocated).  Must not be NULL in order to copy data properly.
+ *	index = Index to a certain font character (provided it is less than the font character count) for storage.
+ *
+ *  Returns:
+ *  	MSBTFONT_SUCCESS = Font character data was successfully loaded.
+ *	MSBTFONT_MISSING_HEADER = Pointer to a MisbitFont header structure was not provided.
+ *	MSBTFONT_MISSING_FILEDATA = Pointer to a MisbitFont file data structure was not provided.
+ *	MSBTFONT_MISSING_DESTINATION_DATA = Pointer to destination data was not provided.
+ *	MSBTFONT_INVALID_HEADER = Invalid header was provided, more than likely failed a magic word check.
+ *	MSBTFONT_FILEDATA_NOT_INITIALIZED = MisbitFont file data structure was not initialized.
+ *	MSBTFONT_INDEX_OUT_OF_BOUNDS = Index provided as outside the range (greater than or equal to the font character count).
+ **/
+extern MSBTFONT_SPEC msbtfont_retcode msbtfont_load_font_character_data(const msbtfont_header *header, const msbtfont_filedata *filedata, unsigned char *dstdata, unsigned int index);
 
 /**
  *  Function:  msbtfont_get_surface_size
