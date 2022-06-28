@@ -1,5 +1,9 @@
 # libmsbtfont Changelog
 
+## Version 0.2.2
+
+- Fixed the `msbtfont_create_filedata` function by properly returning a success return code in the little endian code path.
+
 ## Version 0.2.1
 
 - Added the `msbtfont_load_font_character_data` function to simplify loading font character data straight to application memory.  You can still handle it yourself depending on certain needs.

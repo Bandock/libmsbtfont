@@ -1,4 +1,4 @@
-/* MisbitFont Library V0.2.1
+/* MisbitFont Library V0.2.2
  * By Joshua Moss
  *
  * This library is designed to take advantage of the MisbitFont bitmap format,

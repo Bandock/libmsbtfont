@@ -86,6 +86,7 @@ msbtfont_retcode msbtfont_create_filedata(const msbtfont_header *header, msbtfon
 			filedata->font_data = &filedata->data[0];
 			memset(filedata->font_data, 0, filedata->size);
 		}
+		return MSBTFONT_SUCCESS;
 	}
 	else if (header->magicword_be == MSBTFONT_TBSM)
 	{
